@@ -43,6 +43,7 @@ public abstract class TrustStoreConfiguration {
     @Value.Check
     protected final void check() {
         checkArgument(!path().equals(Paths.get("")), "path cannot be empty");
+        checkArgument(path().toFile().canRead(), "path must exist and be readable");
     }
 
     public static TrustStoreConfiguration of(Path path) {

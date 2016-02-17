@@ -31,9 +31,13 @@ public final class TrustStoreConfigurationTests {
         mapper.readValue(getTestConfigYmlFile("trustStoreConfigEmptyPath.yml"), TrustStoreConfiguration.class);
     }
 
+    @Test(expected = JsonMappingException.class)
+    public void deserializationShouldFailWithBrokenPath() throws Exception {
+        mapper.readValue(getTestConfigYmlFile("trustStoreConfigBrokenPath.yml"), TrustStoreConfiguration.class);
+    }
+
     private String getTestConfigYmlFile(String fileName) throws IOException {
-        Charset defaultCharset = Charset.defaultCharset();
         URL url = Resources.getResource("testConfig/" + fileName);
-        return Resources.toString(url, defaultCharset);
+        return Resources.toString(url, Charset.defaultCharset());
     }
 }
