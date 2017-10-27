@@ -16,8 +16,10 @@
 
 package com.palantir.remoting3.okhttp;
 
+import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.ListeningScheduledExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.palantir.logsafe.SafeArg;
@@ -41,10 +43,17 @@ class AsyncQosIoExceptionHandler implements QosIoExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(AsyncQosIoExceptionHandler.class);
 
-    private final ListeningScheduledExecutorService executorService;
+    private final ListeningScheduledExecutorService scheduledExecutorService;
+    private final ListeningExecutorService executorService;
     private final BackoffStrategy backoffStrategy;
 
-    AsyncQosIoExceptionHandler(ScheduledExecutorService executorService, BackoffStrategy backoffStrategy) {
+    AsyncQosIoExceptionHandler(
+            ScheduledExecutorService scheduledExecutorService,
+            ExecutorService executorService,
+            BackoffStrategy backoffStrategy) {
+        Preconditions.checkArgument(scheduledExecutorService != executorService,
+                "Almost certainly you want these to be different - need fixed pool vs cached.");
+        this.scheduledExecutorService = MoreExecutors.listeningDecorator(scheduledExecutorService);
         this.executorService = MoreExecutors.listeningDecorator(executorService);
         this.backoffStrategy = backoffStrategy;
     }
@@ -63,8 +72,7 @@ class AsyncQosIoExceptionHandler implements QosIoExceptionHandler {
                     return Futures.immediateFailedFuture(qosIoException);
                 } else {
                     log.debug("Rescheduling call after backoff", SafeArg.of("backoffMillis", backoff.get().toMillis()));
-                    return executorService.schedule(
-                            () -> call.clone().execute(), backoff.get().toMillis(), TimeUnit.MILLISECONDS);
+                    return retry(call, backoff.get());
                 }
             }
 
@@ -83,10 +91,18 @@ class AsyncQosIoExceptionHandler implements QosIoExceptionHandler {
                     return Futures.immediateFailedFuture(qosIoException);
                 } else {
                     log.debug("Rescheduling call after backoff", SafeArg.of("backoffMillis", backoff.get().toMillis()));
-                    return executorService.schedule(
-                            () -> call.clone().execute(), backoff.get().toMillis(), TimeUnit.MILLISECONDS);
+                    return retry(call, backoff.get());
                 }
             }
         });
+    }
+
+    // Have to schedule the retry on a different thread to avoid deadlocking a fixed size thread pool.
+    private ListenableFuture<Response> retry(QosIoExceptionAwareCall call, Duration backoff) {
+        ListenableFuture<ListenableFuture<Response>> result =
+                scheduledExecutorService.schedule(
+                        () -> executorService.submit(() -> call.clone().execute()),
+                        backoff.toMillis(), TimeUnit.MILLISECONDS);
+        return Futures.dereference(result);
     }
 }
