@@ -19,7 +19,10 @@ package com.palantir.remoting3.okhttp;
 import java.io.IOException;
 
 /**
- * The {@link okhttp3.RealCall} method only catches IOExceptions.
+ * We want RuntimeExceptions eventually, but we have to wrap them up in an IOException
+ * to convince the {@link okhttp3.RealCall} method to propagate them nicely.
+ *
+ * They're unwrapped right at the top of the stack by our RemoteIOExceptionClient.
  */
 public class RemoteIOException extends IOException {
     public RemoteIOException(RuntimeException runtimeException) {
